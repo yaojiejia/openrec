@@ -71,13 +71,14 @@ class RecommendationProducer:
             logger.error(f"Unexpected error connecting to RabbitMQ: {e}")
             raise
     
-    def send_event(self, user_id: str, item_id: str, process_time: Optional[float] = None) -> bool:
+    def send_event(self, user_id: str, item_id: str, action: str, process_time: Optional[float] = None) -> bool:
         """
         Send a recommendation event to RabbitMQ
         
         Args:
             user_id: User identifier
             item_id: Item identifier
+            action: User action (click, cart, or purchase)
             process_time: Processing timestamp (default: current time)
         
         Returns:
@@ -89,6 +90,7 @@ class RecommendationProducer:
         event = {
             'user_id': user_id,
             'item_id': item_id,
+            'action': action,
             'process_time': process_time
         }
         
@@ -110,7 +112,7 @@ class RecommendationProducer:
             
             logger.info(
                 f"Message sent successfully - Queue: {self.queue}, "
-                f"User: {user_id}, Item: {item_id}"
+                f"User: {user_id}, Item: {item_id}, Action: {action}"
             )
             return True
         except (AMQPConnectionError, AMQPChannelError) as e:
@@ -130,7 +132,7 @@ class RecommendationProducer:
         Send multiple events in batch
         
         Args:
-            events: List of dicts with 'user_id', 'item_id', and optionally 'process_time'
+            events: List of dicts with 'user_id', 'item_id', 'action', and optionally 'process_time'
         
         Returns:
             int: Number of successfully sent messages
@@ -140,6 +142,7 @@ class RecommendationProducer:
             if self.send_event(
                 user_id=event['user_id'],
                 item_id=event['item_id'],
+                action=event['action'],
                 process_time=event.get('process_time')
             ):
                 success_count += 1
@@ -176,16 +179,17 @@ def main():
     try:
         # Send some sample events
         sample_events = [
-            {'user_id': 'user_001', 'item_id': 'item_123'},
-            {'user_id': 'user_002', 'item_id': 'item_456'},
-            {'user_id': 'user_001', 'item_id': 'item_789'},
+            {'user_id': 'user_001', 'item_id': 'item_123', 'action': 'click'},
+            {'user_id': 'user_002', 'item_id': 'item_456', 'action': 'cart'},
+            {'user_id': 'user_001', 'item_id': 'item_789', 'action': 'purchase'},
         ]
         
         print("Sending sample events...")
         for event in sample_events:
             producer.send_event(
                 user_id=event['user_id'],
-                item_id=event['item_id']
+                item_id=event['item_id'],
+                action=event['action']
             )
             time.sleep(0.1)  # Small delay between messages
         

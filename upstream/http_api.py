@@ -5,7 +5,7 @@ Exposes HTTP endpoints to send events to RabbitMQ
 import logging
 import sys
 import os
-from typing import Optional
+from typing import Optional, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -43,6 +43,7 @@ class RecommendationEvent(BaseModel):
     """Schema for recommendation event"""
     user_id: str = Field(..., description="User identifier")
     item_id: str = Field(..., description="Item identifier")
+    action: Literal["click", "cart", "purchase"] = Field(..., description="User action: click, cart, or purchase")
     process_time: Optional[float] = Field(None, description="Processing timestamp (optional, defaults to current time)")
 
 
@@ -104,6 +105,7 @@ async def update_event(event: RecommendationEvent):
         success = producer.send_event(
             user_id=event.user_id,
             item_id=event.item_id,
+            action=event.action,
             process_time=event.process_time
         )
         
@@ -151,6 +153,7 @@ async def update_events_batch(events: list[RecommendationEvent]):
             {
                 'user_id': event.user_id,
                 'item_id': event.item_id,
+                'action': event.action,
                 'process_time': event.process_time
             }
             for event in events

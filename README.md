@@ -135,7 +135,7 @@ The processor will:
 # Send a single event
 curl -X POST "http://localhost:8000/update" \
   -H "Content-Type: application/json" \
-  -d '{"user_id": "user_001", "item_id": "item_123"}'
+  -d '{"user_id": "user_001", "item_id": "item_123", "action": "click"}'
 
 # Check health
 curl http://localhost:8000/health
@@ -239,7 +239,8 @@ curl -X POST "http://localhost:8000/update" \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "user_001",
-    "item_id": "item_123"
+    "item_id": "item_123",
+    "action": "click"
   }'
 ```
 
@@ -248,8 +249,8 @@ curl -X POST "http://localhost:8000/update" \
 curl -X POST "http://localhost:8000/update/batch" \
   -H "Content-Type: application/json" \
   -d '[
-    {"user_id": "user_001", "item_id": "item_123"},
-    {"user_id": "user_002", "item_id": "item_456"}
+    {"user_id": "user_001", "item_id": "item_123", "action": "click"},
+    {"user_id": "user_002", "item_id": "item_456", "action": "cart"}
   ]'
 ```
 
@@ -272,7 +273,8 @@ response = requests.post(
     "http://localhost:8000/update",
     json={
         "user_id": "user_001",
-        "item_id": "item_123"
+        "item_id": "item_123",
+        "action": "click"
     }
 )
 print(response.json())
@@ -281,8 +283,8 @@ print(response.json())
 response = requests.post(
     "http://localhost:8000/update/batch",
     json=[
-        {"user_id": "user_001", "item_id": "item_123"},
-        {"user_id": "user_002", "item_id": "item_456"}
+        {"user_id": "user_001", "item_id": "item_123", "action": "click"},
+        {"user_id": "user_002", "item_id": "item_456", "action": "cart"}
     ]
 )
 print(response.json())
@@ -298,12 +300,14 @@ Each message sent to the HTTP API follows this JSON schema:
 {
     "user_id": "string",
     "item_id": "string",
+    "action": "click",  // Required: "click", "cart", or "purchase"
     "process_time": 1234567890.123  // Optional, defaults to current time
 }
 ```
 
 - `user_id`: Unique identifier for the user (required)
 - `item_id`: Unique identifier for the item (required)
+- `action`: User action type (required) - must be one of: `"click"`, `"cart"`, or `"purchase"`
 - `process_time`: Unix timestamp (float) - optional, defaults to current time
 
 ### Output Schema (Parquet)
@@ -314,11 +318,13 @@ After processing, messages stored in Parquet include an additional field:
 {
     "user_id": "string",
     "item_id": "string",
+    "action": "click",  // click, cart, or purchase
     "process_time": 1234567890.123,
     "hit_flink": true  // Added by transformer
 }
 ```
 
+- `action`: User action type (click, cart, or purchase)
 - `hit_flink`: Boolean field added by the message transformer (always `true`)
 
 ## Features
