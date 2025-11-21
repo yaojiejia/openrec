@@ -1,0 +1,34 @@
+# Prometheus configuration for Recommendation System
+
+global:
+  scrape_interval: 15s  # How often to scrape targets
+  evaluation_interval: 15s  # How often to evaluate rules
+  external_labels:
+    cluster: 'recommendation-system'
+    environment: 'development'
+
+# Scrape configurations
+scrape_configs:
+  # HTTP API Service metrics
+  - job_name: 'http-api'
+    static_configs:
+      - targets: ['host.docker.internal:8001']  # Windows/Mac: host.docker.internal
+        labels:
+          service: 'http-api'
+          component: 'upstream'
+    # For Linux, use: '172.17.0.1:8001' or configure network_mode: host
+
+  # Message Processor metrics
+  - job_name: 'message-processor'
+    static_configs:
+      - targets: ['host.docker.internal:8002']  # Windows/Mac: host.docker.internal
+        labels:
+          service: 'message-processor'
+          component: 'process'
+    # For Linux, use: '172.17.0.1:8002' or configure network_mode: host
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+

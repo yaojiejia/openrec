@@ -29,6 +29,18 @@ from .parquet_writer import ParquetWriter
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import metrics
+from monitoring.metrics import (
+    start_metrics_server,
+    start_system_metrics_collection,
+    stop_system_metrics_collection,
+    messages_processed_total,
+    messages_flushed_total,
+    parquet_write_duration,
+    parquet_write_size,
+    buffer_size
+)
+
 
 class MessageProcessor:
     """Processes messages from RabbitMQ: consume -> transform -> store in Parquet"""
@@ -71,6 +83,11 @@ class MessageProcessor:
             table_name=parquet_table_name
         )
         
+        # Start Prometheus metrics server
+        start_metrics_server(port=8002)
+        start_system_metrics_collection(interval=5.0)
+        logger.info("Prometheus metrics enabled on port 8002")
+        
         logger.info("Message processor initialized")
     
     def _process_message(self, message_data: dict, metadata: dict):
@@ -89,21 +106,36 @@ class MessageProcessor:
             with self.buffer_lock:
                 self.message_buffer.append(transformed)
                 
+                # Update buffer size metric
+                buffer_size.set(len(self.message_buffer))
+                
                 # Write batch if buffer is full (size-based flush)
                 if len(self.message_buffer) >= self.batch_size:
-                    self._flush_buffer()
+                    self._flush_buffer(trigger='size_based')
+            
+            # Track metrics
+            action = message_data.get('action', 'unknown')
+            messages_processed_total.labels(action=action).inc()
             
             logger.info(
                 f"Processed message - User: {message_data['user_id']}, "
                 f"Item: {message_data['item_id']}, "
+                f"Action: {message_data.get('action', 'unknown')}, "
                 f"Hit Flink: {transformed['hit_flink']}"
             )
             
         except Exception as e:
             logger.error(f"Error processing message: {e}")
     
-    def _flush_buffer(self):
-        """Flush the message buffer to Parquet (thread-safe)"""
+    def _flush_buffer(self, trigger: str = 'unknown'):
+        """
+        Flush the message buffer to Parquet (thread-safe)
+        
+        Args:
+            trigger: What triggered the flush ('size_based', 'time_based', 'shutdown')
+        """
+        import time as time_module
+        
         with self.buffer_lock:
             if not self.message_buffer:
                 return
@@ -112,14 +144,25 @@ class MessageProcessor:
                 # Copy buffer and clear it
                 messages_to_write = self.message_buffer.copy()
                 self.message_buffer.clear()
+                
+                # Update buffer size metric
+                buffer_size.set(0)
             except Exception as e:
                 logger.error(f"Error preparing buffer for flush: {e}")
                 return
         
         # Write outside the lock to avoid blocking message processing
+        start_time = time_module.time()
         try:
             count = self.parquet_writer.write_batch(messages_to_write)
-            logger.info(f"Flushed {count} messages to Parquet")
+            
+            # Track metrics
+            duration = time_module.time() - start_time
+            parquet_write_duration.observe(duration)
+            parquet_write_size.observe(count)
+            messages_flushed_total.labels(trigger=trigger).inc()
+            
+            logger.info(f"Flushed {count} messages to Parquet (trigger: {trigger})")
         except Exception as e:
             logger.error(f"Error flushing buffer to Parquet: {e}")
     
@@ -129,7 +172,7 @@ class MessageProcessor:
             time.sleep(self.flush_interval)
             if self.running and self.message_buffer:
                 logger.debug(f"Time-based flush triggered (interval: {self.flush_interval}s)")
-                self._flush_buffer()
+                self._flush_buffer(trigger='time_based')
     
     def start(self):
         """Start processing messages"""
@@ -157,8 +200,12 @@ class MessageProcessor:
                 self.flush_timer.join(timeout=1.0)
             
             # Flush any remaining messages
-            self._flush_buffer()
+            self._flush_buffer(trigger='shutdown')
             self.consumer.close()
+            
+            # Stop metrics collection
+            stop_system_metrics_collection()
+            
             logger.info("Message processor stopped")
 
 

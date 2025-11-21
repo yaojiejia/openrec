@@ -25,6 +25,16 @@ from upstream.config import (
     RABBITMQ_PASSWORD
 )
 
+# Import metrics
+from monitoring.metrics import (
+    start_metrics_server,
+    start_system_metrics_collection,
+    http_requests_total,
+    http_request_duration,
+    events_sent_total,
+    events_sent_batch_size
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -57,8 +67,14 @@ class EventResponse(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize RabbitMQ producer on startup"""
+    """Initialize RabbitMQ producer and metrics on startup"""
     global producer
+    
+    # Start Prometheus metrics server
+    start_metrics_server(port=8001)
+    start_system_metrics_collection(interval=5.0)
+    logger.info("Prometheus metrics enabled on port 8001")
+    
     try:
         producer = RecommendationProducer(
             host=RABBITMQ_HOST,
@@ -89,18 +105,22 @@ async def update_event(event: RecommendationEvent):
     Send a recommendation event to RabbitMQ
     
     Args:
-        event: Recommendation event containing user_id, item_id, and optional process_time
+        event: Recommendation event containing user_id, item_id, action, and optional process_time
     
     Returns:
         EventResponse: Success status and event details
     """
-    if producer is None:
-        raise HTTPException(
-            status_code=503,
-            detail="RabbitMQ producer not initialized"
-        )
+    import time as time_module
+    start_time = time_module.time()
     
     try:
+        if producer is None:
+            http_requests_total.labels(method='POST', endpoint='/update', status='503').inc()
+            raise HTTPException(
+                status_code=503,
+                detail="RabbitMQ producer not initialized"
+            )
+        
         # Send event to RabbitMQ
         success = producer.send_event(
             user_id=event.user_id,
@@ -110,6 +130,10 @@ async def update_event(event: RecommendationEvent):
         )
         
         if success:
+            # Track metrics
+            events_sent_total.labels(action=event.action).inc()
+            http_requests_total.labels(method='POST', endpoint='/update', status='200').inc()
+            
             return EventResponse(
                 success=True,
                 message="Event sent to RabbitMQ successfully",
@@ -117,17 +141,24 @@ async def update_event(event: RecommendationEvent):
                 item_id=event.item_id
             )
         else:
+            http_requests_total.labels(method='POST', endpoint='/update', status='500').inc()
             raise HTTPException(
                 status_code=500,
                 detail="Failed to send event to RabbitMQ"
             )
     
+    except HTTPException:
+        raise
     except Exception as e:
+        http_requests_total.labels(method='POST', endpoint='/update', status='500').inc()
         logger.error(f"Error sending event to RabbitMQ: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+    finally:
+        duration = time_module.time() - start_time
+        http_request_duration.labels(method='POST', endpoint='/update').observe(duration)
 
 
 @app.post("/update/batch")
@@ -141,13 +172,17 @@ async def update_events_batch(events: list[RecommendationEvent]):
     Returns:
         JSON response with batch processing results
     """
-    if producer is None:
-        raise HTTPException(
-            status_code=503,
-            detail="RabbitMQ producer not initialized"
-        )
+    import time as time_module
+    start_time = time_module.time()
     
     try:
+        if producer is None:
+            http_requests_total.labels(method='POST', endpoint='/update/batch', status='503').inc()
+            raise HTTPException(
+                status_code=503,
+                detail="RabbitMQ producer not initialized"
+            )
+        
         # Convert Pydantic models to dicts
         event_dicts = [
             {
@@ -162,6 +197,12 @@ async def update_events_batch(events: list[RecommendationEvent]):
         # Send batch to RabbitMQ
         success_count = producer.send_batch(event_dicts)
         
+        # Track metrics
+        events_sent_batch_size.observe(len(events))
+        for event in events:
+            events_sent_total.labels(action=event.action).inc()
+        http_requests_total.labels(method='POST', endpoint='/update/batch', status='200').inc()
+        
         return JSONResponse(
             status_code=200,
             content={
@@ -173,17 +214,24 @@ async def update_events_batch(events: list[RecommendationEvent]):
             }
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
+        http_requests_total.labels(method='POST', endpoint='/update/batch', status='500').inc()
         logger.error(f"Error sending batch events to RabbitMQ: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+    finally:
+        duration = time_module.time() - start_time
+        http_request_duration.labels(method='POST', endpoint='/update/batch').observe(duration)
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    http_requests_total.labels(method='GET', endpoint='/health', status='200').inc()
     return {
         "status": "healthy",
         "rabbitmq_connected": producer is not None

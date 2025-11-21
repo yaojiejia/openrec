@@ -41,3 +41,7 @@ Thumbs.db
 data/
 *.parquet
 
+# Monitoring data
+prometheus_data/
+grafana_data/
+

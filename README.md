@@ -128,6 +128,27 @@ The processor will:
 - Consume messages from RabbitMQ
 - Transform messages (add `hit_flink: true` field)
 - Write to Parquet files in `data/parquet/recommendation_events/`
+- Expose Prometheus metrics on port 8002
+
+### 4. Start Monitoring (Grafana + Prometheus) - Optional
+
+In a third terminal:
+```bash
+# Start Prometheus and Grafana
+docker-compose -f docker-compose.monitoring.yml up -d
+```
+
+Access:
+- **Prometheus**: http://localhost:9090
+- **Grafana**: http://localhost:3000 (admin/admin)
+
+The dashboard will automatically show:
+- HTTP request rates and latency
+- Events sent by action type (click/cart/purchase)
+- Messages processed
+- System CPU and memory usage
+- Processor buffer size
+- Parquet write performance
 
 ### 4. Send Test Events
 
@@ -413,6 +434,57 @@ Future enhancements could include:
 3. **Monitoring**: Metrics and alerting for the processing pipeline
 4. **Scaling**: Multiple processor instances for higher throughput
 
+## Monitoring
+
+The system includes Prometheus metrics and Grafana dashboards for monitoring.
+
+### Metrics Endpoints
+
+- **HTTP API Metrics**: http://localhost:8001/metrics
+- **Processor Metrics**: http://localhost:8002/metrics
+
+### Available Metrics
+
+**HTTP API:**
+- `http_requests_total` - Request count by method, endpoint, status
+- `http_request_duration_seconds` - Request latency
+- `events_sent_total` - Events sent by action type
+- `events_sent_batch_size` - Batch size distribution
+
+**Message Processor:**
+- `messages_processed_total` - Messages processed by action
+- `messages_flushed_total` - Batches flushed by trigger
+- `parquet_write_duration_seconds` - Write latency
+- `processor_buffer_size` - Current buffer size
+
+**System:**
+- `system_cpu_percent` - CPU usage
+- `system_memory_percent` - Memory usage
+- `process_cpu_percent` - Process CPU by service
+- `process_memory_mb` - Process memory by service
+
+### Setup Monitoring
+
+1. **Install dependencies:**
+   ```bash
+   pip install prometheus-client psutil
+   ```
+
+2. **Start Prometheus and Grafana:**
+   ```bash
+   docker-compose -f docker-compose.monitoring.yml up -d
+   ```
+
+3. **Access dashboards:**
+   - Prometheus: http://localhost:9090
+   - Grafana: http://localhost:3000 (admin/admin)
+
+4. **View metrics:**
+   - Metrics are automatically exposed when services start
+   - Grafana dashboard is pre-configured with key metrics
+
+See `monitoring/README.md` for detailed metrics documentation.
+
 ## Troubleshooting
 
 - **Connection Error**: Ensure RabbitMQ is running and accessible at the configured host and port
@@ -422,4 +494,8 @@ Future enhancements could include:
   - Docker: `docker ps | grep rabbitmq`
   - Linux: `sudo systemctl status rabbitmq-server`
   - Check logs: `docker logs some-rabbit` (if using Docker)
+- **Metrics Not Showing**: 
+  - Ensure `prometheus-client` and `psutil` are installed
+  - Check that metrics endpoints are accessible: http://localhost:8001/metrics and http://localhost:8002/metrics
+  - Verify Prometheus can reach the services (check `prometheus/prometheus.yml` configuration)
 
