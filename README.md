@@ -87,7 +87,26 @@ This project implements the RabbitMQ data ingestion layer for an online recommen
 
 ## Quick Start
 
-### 1. Start RabbitMQ
+### Option 1: Docker Compose (Recommended)
+
+Start all services with one command:
+
+```bash
+docker-compose up -d
+```
+
+This starts:
+- RabbitMQ (port 5672, Management UI: 15672)
+- HTTP API Service (port 8000)
+- Message Processor
+- Prometheus (port 9090)
+- Grafana (port 3000)
+
+See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed Docker instructions.
+
+### Option 2: Manual Setup
+
+#### 1. Start RabbitMQ
 
 Using Docker (recommended):
 ```bash
@@ -96,7 +115,7 @@ docker run -d --hostname my-rabbit --name some-rabbit -p 5672:5672 -p 15672:1567
 
 Management UI: http://localhost:15672 (guest/guest)
 
-### 2. Start HTTP API Service
+#### 2. Start HTTP API Service
 
 In one terminal:
 ```bash
@@ -132,10 +151,12 @@ The processor will:
 
 ### 4. Start Monitoring (Grafana + Prometheus) - Optional
 
-In a third terminal:
+**Note**: If using Docker Compose (Option 1), monitoring services are already included.
+
+If running services manually (Option 2), start monitoring in a third terminal:
 ```bash
-# Start Prometheus and Grafana
-docker-compose -f docker-compose.monitoring.yml up -d
+# Start Prometheus and Grafana (they're included in the main docker-compose.yml)
+docker-compose up -d prometheus grafana
 ```
 
 Access:
@@ -168,6 +189,59 @@ The processor uses a hybrid flushing strategy for near real-time performance:
 - **Batch size**: 20 messages (flushes when buffer is full)
 - **Time-based flush**: Every 5 seconds (flushes even if buffer isn't full)
 - **Result**: Maximum 5-second latency with efficient batching
+
+## Ports and Routes
+
+### HTTP API Service (Port 8000)
+
+**Base URL**: `http://localhost:8000`
+
+| Method | Route | Description | Request Body |
+|--------|-------|-------------|--------------|
+| `POST` | `/update` | Send a single recommendation event | `{"user_id": "string", "item_id": "string", "action": "click\|cart\|purchase", "process_time": float?}` |
+| `POST` | `/update/batch` | Send multiple events in batch | `[{"user_id": "string", "item_id": "string", "action": "click\|cart\|purchase", "process_time": float?}, ...]` |
+| `GET` | `/health` | Health check endpoint | - |
+| `GET` | `/docs` | Interactive API documentation (Swagger UI) | - |
+| `GET` | `/openapi.json` | OpenAPI schema | - |
+
+**Example Request**:
+```bash
+curl -X POST "http://localhost:8000/update" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user_001", "item_id": "item_123", "action": "click"}'
+```
+
+### Metrics Endpoints
+
+| Service | Port | Endpoint | Description |
+|--------|------|----------|-------------|
+| HTTP API | 8001 | `/metrics` | Prometheus metrics for HTTP API service |
+| Message Processor | 8002 | `/metrics` | Prometheus metrics for message processor |
+
+**Example**:
+- HTTP API metrics: http://localhost:8001/metrics
+- Processor metrics: http://localhost:8002/metrics
+
+### Infrastructure Services
+
+| Service | Port | URL | Credentials | Description |
+|--------|------|-----|-------------|-------------|
+| RabbitMQ | 5672 | `amqp://localhost:5672` | guest/guest | AMQP message broker |
+| RabbitMQ Management | 15672 | http://localhost:15672 | guest/guest | RabbitMQ web management UI |
+| Prometheus | 9090 | http://localhost:9090 | - | Metrics collection and querying |
+| Grafana | 3000 | http://localhost:3000 | admin/admin | Metrics visualization and dashboards |
+
+### Service Port Summary
+
+| Service | Port(s) | Purpose |
+|---------|---------|---------|
+| HTTP API | 8000 | Main API endpoint |
+| HTTP API Metrics | 8001 | Prometheus metrics |
+| Processor Metrics | 8002 | Prometheus metrics |
+| RabbitMQ AMQP | 5672 | Message queue protocol |
+| RabbitMQ Management | 15672 | Web UI |
+| Prometheus | 9090 | Metrics server |
+| Grafana | 3000 | Dashboard UI |
 
 ## Usage
 
@@ -472,7 +546,8 @@ The system includes Prometheus metrics and Grafana dashboards for monitoring.
 
 2. **Start Prometheus and Grafana:**
    ```bash
-   docker-compose -f docker-compose.monitoring.yml up -d
+   # Using the unified docker-compose.yml
+   docker-compose up -d prometheus grafana
    ```
 
 3. **Access dashboards:**

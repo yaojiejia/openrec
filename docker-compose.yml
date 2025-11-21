@@ -1,0 +1,128 @@
+services:
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - recommendation-network
+    restart: unless-stopped
+
+  # HTTP API Service (Upstream)
+  upstream:
+    build:
+      context: .
+      dockerfile: Dockerfile.upstream
+    container_name: upstream-api
+    ports:
+      - "8000:8000"  # HTTP API
+      - "8001:8001"  # Metrics
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_QUEUE=recommendation-events
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - recommendation-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Message Processor Service
+  process:
+    build:
+      context: .
+      dockerfile: Dockerfile.process
+    container_name: message-processor
+    ports:
+      - "8002:8002"  # Metrics
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_QUEUE=recommendation-events
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - PARQUET_BASE_PATH=/app/data/parquet
+      - PARQUET_TABLE_NAME=recommendation_events
+      - BATCH_SIZE=20
+    volumes:
+      - parquet_data:/app/data/parquet
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - recommendation-network
+    restart: unless-stopped
+
+  # Prometheus Metrics Server
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - upstream
+      - process
+    networks:
+      - recommendation-network
+    restart: unless-stopped
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - recommendation-network
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
+  parquet_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  recommendation-network:
+    driver: bridge
+

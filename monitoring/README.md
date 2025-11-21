@@ -39,7 +39,8 @@ This directory contains Prometheus metrics instrumentation for the recommendatio
 
 3. Start Prometheus and Grafana:
    ```bash
-   docker-compose -f docker-compose.monitoring.yml up -d
+   # Using the unified docker-compose.yml
+   docker-compose up -d prometheus grafana
    ```
 
 4. Access:

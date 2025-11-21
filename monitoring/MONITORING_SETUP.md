@@ -30,7 +30,7 @@ python -m process.processor
 ### 3. Start Prometheus and Grafana
 
 ```bash
-docker-compose -f docker-compose.monitoring.yml up -d
+docker-compose up -d prometheus grafana
 ```
 
 ### 4. Access Dashboards
@@ -102,11 +102,11 @@ docker-compose -f docker-compose.monitoring.yml up -d
 ## Stopping Monitoring
 
 ```bash
-docker-compose -f docker-compose.monitoring.yml down
+docker-compose down prometheus grafana
 ```
 
 To remove data volumes:
 ```bash
-docker-compose -f docker-compose.monitoring.yml down -v
+docker-compose down -v prometheus grafana
 ```
 

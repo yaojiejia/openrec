@@ -1,0 +1,18 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY upstream/ ./upstream/
+COPY monitoring/ ./monitoring/
+
+# Expose API and metrics ports
+EXPOSE 8000 8001
+
+# Run the HTTP API
+CMD ["python", "-m", "uvicorn", "upstream.http_api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+

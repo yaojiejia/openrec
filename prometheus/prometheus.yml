@@ -12,20 +12,18 @@ scrape_configs:
   # HTTP API Service metrics
   - job_name: 'http-api'
     static_configs:
-      - targets: ['host.docker.internal:8001']  # Windows/Mac: host.docker.internal
+      - targets: ['upstream:8001']
         labels:
           service: 'http-api'
           component: 'upstream'
-    # For Linux, use: '172.17.0.1:8001' or configure network_mode: host
 
   # Message Processor metrics
   - job_name: 'message-processor'
     static_configs:
-      - targets: ['host.docker.internal:8002']  # Windows/Mac: host.docker.internal
+      - targets: ['process:8002']
         labels:
           service: 'message-processor'
           component: 'process'
-    # For Linux, use: '172.17.0.1:8002' or configure network_mode: host
 
   # Prometheus itself
   - job_name: 'prometheus'
